@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>스네이크 게임</title>
+  <style>
+    body {
+      background-color: #121212; /* 어두운 배경색 */
+      color: white;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 30px;
+      user-select: none;
+    }
+    canvas {
+      background: rgba(0, 0, 0, 0.7);
+      border: 2px solid #fff;
+      margin-top: 10px;
+      cursor: default;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 18px;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.3s ease;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    table {
+      margin-top: 20px;
+      background: rgba(255, 255, 255, 0.1);
+      border-collapse: collapse;
+      color: white;
+      width: 320px;
+    }
+    th, td {
+      padding: 8px 12px;
+      border: 1px solid #fff;
+      text-align: center;
+    }
+    h3 {
+      margin-top: 30px;
+    }
+    #playerName {
+      font-size: 20px;
+      margin-top: 10px;
+    }
+    p.description {
+      margin: 5px 0 0 0;
+      font-weight: bold;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐍 스네이크 게임</h1>
+  <p class="description">🟥 빨간색이 지렁이입니다.</p>
+  <p class="description">🎮 WASD로 조종합니다.</p>
+  
+  <div id="playerName"></div>
+  <button id="changeNameBtn">이름 변경</button>
+  <button id="startBtn">게임 시작</button>
+  
+  <canvas id="gameCanvas" width="400" height="400"></canvas>
+  <p id="score">점수: 0</p>
+
+  <h3>🎯 이전 기록</h3>
+  <table id="historyTable">
+    <tr><th>#</th><th>이름</th><th>점수</th></tr>
+  </table>
+
+  <h3>🏆 최고 점수 TOP 5</h3>
+  <table id="topScoreTable">
+    <tr><th>순위</th><th>이름</th><th>점수</th></tr>
+  </table>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const box = 20;
+    let snake = [];
+    let food = {};
+    let direction = "";
+    let score = 0;
+    let game = null;
+    let isRunning = false;
+    let history = [];
+    let playerName = "";
+
+    function loadName() {
+      playerName = localStorage.getItem("snakePlayerName");
+      if (!playerName) {
+        playerName = prompt("플레이어 이름을 입력하세요:") || "이름없음";
+        localStorage.setItem("snakePlayerName", playerName);
+      }
+      document.getElementById("playerName").textContent = `👤 현재 플레이어: ${playerName}`;
+    }
+
+    function loadHistory() {
+      const saved = localStorage.getItem("snakeGameHistory");
+      if (saved) {
+        history = JSON.parse(saved);
+      }
+      updateHistory();
+    }
+
+    function saveHistory() {
+      localStorage.setItem("snakeGameHistory", JSON.stringify(history));
+    }
+
+    function updateHistory() {
+      const table = document.getElementById("historyTable");
+      table.innerHTML = "<tr><th>#</th><th>이름</th><th>점수</th></tr>";
+      history.forEach(([name, s], i) => {
+        const row = table.insertRow();
+        row.insertCell().textContent = i + 1;
+        row.insertCell().textContent = name;
+        row.insertCell().textContent = s;
+      });
+
+      const top5 = [...history].sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const topTable = document.getElementById("topScoreTable");
+      topTable.innerHTML = "<tr><th>순위</th><th>이름</th><th>점수</th></tr>";
+      top5.forEach(([name, s], i) => {
+        const row = topTable.insertRow();
+        row.insertCell().textContent = i + 1;
+        row.insertCell().textContent = name;
+        row.insertCell().textContent = s;
+      });
+    }
+
+    document.getElementById("changeNameBtn").addEventListener("click", () => {
+      const newName = prompt("새 이름을 입력하세요:");
+      if (newName && newName.trim()) {
+        playerName = newName.trim();
+        localStorage.setItem("snakePlayerName", playerName);
+        document.getElementById("playerName").textContent = `👤 현재 플레이어: ${playerName}`;
+      }
+    });
+
+    document.addEventListener("keydown", e => {
+      if (!isRunning) return;
+      const key = e.key.toLowerCase();
+      if ((key === "arrowleft" || key === "a") && direction !== "RIGHT") direction = "LEFT";
+      else if ((key === "arrowup" || key === "w") && direction !== "DOWN") direction = "UP";
+      else if ((key === "arrowright" || key === "d") && direction !== "LEFT") direction = "RIGHT";
+      else if ((key === "arrowdown" || key === "s") && direction !== "UP") direction = "DOWN";
+    });
+
+    function spawnFood() {
+      return {
+        x: Math.floor(Math.random() * (canvas.width / box)) * box,
+        y: Math.floor(Math.random() * (canvas.height / box)) * box,
+      };
+    }
+
+    function initGame() {
+      snake = [{ x: 200, y: 200 }];
+      food = spawnFood();
+      direction = "";
+      score = 0;
+      isRunning = true;
+      document.getElementById("score").textContent = "점수: " + score;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // 빨간색 지렁이 그리기
+      ctx.fillStyle = "red";
+      for (let i = 0; i < snake.length; i++) {
+        ctx.fillRect(snake[i].x, snake[i].y, box, box);
+      }
+
+      // 원형 먹이 그리기
+      ctx.fillStyle = "green";
+      ctx.beginPath();
+      ctx.arc(food.x + box / 2, food.y + box / 2, box / 2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      let head = { ...snake[0] };
+      if (direction === "LEFT") head.x -= box;
+      else if (direction === "RIGHT") head.x += box;
+      else if (direction === "UP") head.y -= box;
+      else if (direction === "DOWN") head.y += box;
+      else return;
+
+      // 벽 또는 몸에 부딪히면 게임 종료
+      if (
+        head.x < 0 || head.x >= canvas.width ||
+        head.y < 0 || head.y >= canvas.height ||
+        snake.some(seg => seg.x === head.x && seg.y === head.y)
+      ) {
+        clearInterval(game);
+        isRunning = false;
+        history.push([playerName, score]);
+        saveHistory();
+        updateHistory();
+        alert(`게임 오버! 점수: ${score}`);
+        return;
+      }
+
+      snake.unshift(head);
+
+      if (head.x === food.x && head.y === food.y) {
+        score++;
+        document.getElementById("score").textContent = "점수: " + score;
+        food = spawnFood();
+      } else {
+        snake.pop();
+      }
+    }
+
+    document.getElementById("startBtn").addEventListener("click", () => {
+      if (isRunning) {
+        clearInterval(game);
+        isRunning = false;
+      }
+      initGame();
+      game = setInterval(draw, 150);
+    });
+
+    loadName();
+    loadHistory();
+  </script>
+</body>
+</html>
